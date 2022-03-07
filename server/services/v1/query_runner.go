@@ -17,11 +17,10 @@ package v1
 import (
 	"context"
 	"encoding/json"
-
 	api "github.com/tigrisdata/tigrisdb/api/server/v1"
+	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/encoding"
 	"github.com/tigrisdata/tigrisdb/query/filter"
-	"github.com/tigrisdata/tigrisdb/server/cdc"
 	"github.com/tigrisdata/tigrisdb/server/transaction"
 	"github.com/tigrisdata/tigrisdb/store/kv"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
@@ -78,15 +77,15 @@ func (q *TxQueryRunner) Run(ctx context.Context, req *Request) (*Response, error
 		return nil, err
 	}
 
-	cdcCtx := cdc.WrapContext(ctx)
+	ctx = cdc.WrapContext(ctx)
 
 	var txErr error
 	defer func() {
 		var err error
 		if txErr == nil {
-			err = tx.Commit(cdcCtx)
+			err = tx.Commit(ctx)
 		} else {
-			err = tx.Rollback(cdcCtx)
+			err = tx.Rollback(ctx)
 		}
 		if txErr == nil {
 			txErr = err
@@ -94,9 +93,9 @@ func (q *TxQueryRunner) Run(ctx context.Context, req *Request) (*Response, error
 	}()
 
 	if reqFilter := api.GetFilter(req.apiRequest); reqFilter != nil {
-		txErr = q.iterateFilter(cdcCtx, req, tx, reqFilter)
+		txErr = q.iterateFilter(ctx, req, tx, reqFilter)
 	} else {
-		txErr = q.iterateDocument(cdcCtx, req, tx)
+		txErr = q.iterateDocument(ctx, req, tx)
 	}
 
 	if ulog.E(txErr) {

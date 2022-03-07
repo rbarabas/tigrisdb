@@ -17,7 +17,7 @@ package main
 import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/rs/zerolog/log"
-	"github.com/tigrisdata/tigrisdb/server/cdc"
+	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/server/config"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
 )

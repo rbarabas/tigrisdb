@@ -24,7 +24,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/rs/zerolog/log"
-	"github.com/tigrisdata/tigrisdb/server/cdc"
+	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/server/config"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
 	"golang.org/x/xerrors"
@@ -286,7 +286,10 @@ func (t *ftx) Insert(ctx context.Context, table string, key Key, data []byte) er
 	}
 
 	t.tx.Set(k, data)
-	cdc.OnSet(ctx, k, data)
+	err = cdc.OnSet(ctx, k, data)
+	if err != nil {
+		return err
+	}
 
 	log.Err(err).Str("table", table).Interface("key", key).Msg("Insert")
 
@@ -297,7 +300,10 @@ func (t *ftx) Replace(ctx context.Context, table string, key Key, data []byte) e
 	k := getFDBKey(table, key)
 
 	t.tx.Set(k, data)
-	cdc.OnSet(ctx, k, data)
+	err := cdc.OnSet(ctx, k, data)
+	if err != nil {
+		return err
+	}
 
 	log.Debug().Str("table", table).Interface("key", key).Msg("tx Replace")
 
@@ -311,7 +317,10 @@ func (t *ftx) Delete(ctx context.Context, table string, key Key) error {
 	}
 
 	t.tx.ClearRange(kr)
-	cdc.OnClearRange(ctx, kr)
+	err = cdc.OnClearRange(ctx, kr)
+	if err != nil {
+		return err
+	}
 
 	log.Debug().Str("table", table).Interface("key", key).Msg("tx delete")
 
@@ -344,7 +353,10 @@ func (t *ftx) UpdateRange(ctx context.Context, table string, lKey Key, rKey Key,
 		}
 		v := apply(kv.Value)
 		t.tx.Set(kv.Key, v)
-		cdc.OnSet(ctx, kv.Key, v)
+		err = cdc.OnSet(ctx, kv.Key, v)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Debug().Str("table", table).Interface("lKey", lKey).Interface("rKey", rKey).Msg("tx update range")
@@ -405,7 +417,9 @@ func (t *ftx) Commit(ctx context.Context) error {
 	return nil
 }
 
-func (t *ftx) Rollback(_ context.Context) error {
+func (t *ftx) Rollback(ctx context.Context) error {
+	cdc.OnRollback(ctx)
+
 	t.tx.Cancel()
 
 	log.Debug().Msg("tx Rollback")

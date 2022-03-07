@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/gob"
+	"errors"
+
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"github.com/rs/zerolog/log"
 )
@@ -46,7 +48,7 @@ func (q *queue) addEntry(entry interface{}) {
 	q.Entries = append(q.Entries, entry)
 }
 
-func (q *queue) encode() ([]byte, error) {
+func encode(q *queue) ([]byte, error) {
 	b := bytes.Buffer{}
 	e := gob.NewEncoder(&b)
 	err := e.Encode(q)
@@ -83,20 +85,54 @@ func WrapContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxKey{}, &queue{})
 }
 
-func OnSet(ctx context.Context, key fdb.Key, data []byte) {
-	q := ctx.Value(ctxKey{}).(*queue)
+func OnSet(ctx context.Context, key fdb.Key, data []byte) error {
+	q, err := getQueue(ctx)
+	if err != nil {
+		return err
+	}
 	q.addEntry(setEntry{Key: key, Data: data})
+	return nil
 }
 
-func OnClearRange(ctx context.Context, kr fdb.KeyRange) {
-	q := ctx.Value(ctxKey{}).(*queue)
+func OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
+	q, err := getQueue(ctx)
+	if err != nil {
+		return err
+	}
 	q.addEntry(clearEntry{Kr: kr})
+	return nil
 }
 
 func OnCommit(ctx context.Context) ([]byte, error) {
-	var q = ctx.Value(ctxKey{}).(*queue)
+	q, err := getQueue(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		q.Entries = nil
+	}()
+
 	q.dump()
-	return q.encode()
+	return encode(q)
+}
+
+func OnRollback(ctx context.Context) {
+	q, _ := getQueue(ctx)
+	if q != nil {
+		q.Entries = nil
+	}
+}
+
+func getQueue(ctx context.Context) (*queue, error) {
+	q, ok := ctx.Value(ctxKey{}).(*queue)
+	if !ok {
+		return nil, errors.New("failed to cast to *queue")
+	} else if q == nil {
+		return nil, errors.New("no queue on context")
+	} else {
+		return q, nil
+	}
 }
 
 func Replay(db fdb.Database) error {
