@@ -24,6 +24,7 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/rs/zerolog/log"
+	"github.com/tigrisdata/tigrisdb/server/cdc"
 	"github.com/tigrisdata/tigrisdb/server/config"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
 	"golang.org/x/xerrors"
@@ -271,7 +272,7 @@ func (d *fdbkv) Tx(ctx context.Context) (Tx, error) {
 	return &ftx{d: d, tx: &tx}, nil
 }
 
-func (t *ftx) Insert(_ context.Context, table string, key Key, data []byte) error {
+func (t *ftx) Insert(ctx context.Context, table string, key Key, data []byte) error {
 	k := getFDBKey(table, key)
 
 	// Read the value and if exists reject the write
@@ -285,29 +286,32 @@ func (t *ftx) Insert(_ context.Context, table string, key Key, data []byte) erro
 	}
 
 	t.tx.Set(k, data)
+	cdc.OnSet(ctx, k, data)
 
 	log.Err(err).Str("table", table).Interface("key", key).Msg("Insert")
 
 	return err
 }
 
-func (t *ftx) Replace(_ context.Context, table string, key Key, data []byte) error {
+func (t *ftx) Replace(ctx context.Context, table string, key Key, data []byte) error {
 	k := getFDBKey(table, key)
 
 	t.tx.Set(k, data)
+	cdc.OnSet(ctx, k, data)
 
 	log.Debug().Str("table", table).Interface("key", key).Msg("tx Replace")
 
 	return nil
 }
 
-func (t *ftx) Delete(_ context.Context, table string, key Key) error {
+func (t *ftx) Delete(ctx context.Context, table string, key Key) error {
 	kr, err := fdb.PrefixRange(getFDBKey(table, key))
 	if ulog.E(err) {
 		return err
 	}
 
 	t.tx.ClearRange(kr)
+	cdc.OnClearRange(ctx, kr)
 
 	log.Debug().Str("table", table).Interface("key", key).Msg("tx delete")
 
@@ -325,7 +329,7 @@ func (t *ftx) DeleteRange(_ context.Context, table string, lKey Key, rKey Key) e
 	return nil
 }
 
-func (t *ftx) UpdateRange(_ context.Context, table string, lKey Key, rKey Key, apply func([]byte) []byte) error {
+func (t *ftx) UpdateRange(ctx context.Context, table string, lKey Key, rKey Key, apply func([]byte) []byte) error {
 	lk := getFDBKey(table, lKey)
 	rk := getFDBKey(table, rKey)
 
@@ -340,6 +344,7 @@ func (t *ftx) UpdateRange(_ context.Context, table string, lKey Key, rKey Key, a
 		}
 		v := apply(kv.Value)
 		t.tx.Set(kv.Key, v)
+		cdc.OnSet(ctx, kv.Key, v)
 	}
 
 	log.Debug().Str("table", table).Interface("lKey", lKey).Interface("rKey", rKey).Msg("tx update range")
@@ -369,9 +374,15 @@ func (t *ftx) ReadRange(_ context.Context, table string, lKey Key, rKey Key) (It
 	return &fdbIterator{it: r.Iterator(), subspace: subspace.FromBytes([]byte(table))}, nil
 }
 
-func (t *ftx) Commit(_ context.Context) error {
+func (t *ftx) Commit(ctx context.Context) error {
 	for {
-		err := t.tx.Commit().Get()
+		data, err := cdc.OnCommit(ctx)
+		if err != nil {
+			return err
+		}
+		t.tx.Set(getFDBKey("cdc", BuildKey(time.Now().UnixNano())), data)
+
+		err = t.tx.Commit().Get()
 
 		if err == nil {
 			break
