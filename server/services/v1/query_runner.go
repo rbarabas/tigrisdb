@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	api "github.com/tigrisdata/tigrisdb/api/server/v1"
-	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/encoding"
 	"github.com/tigrisdata/tigrisdb/query/filter"
 	"github.com/tigrisdata/tigrisdb/query/read"
@@ -78,8 +77,6 @@ func (q *TxQueryRunner) Run(ctx context.Context, req *Request) (*Response, error
 	if err != nil {
 		return nil, err
 	}
-
-	ctx = cdc.WrapContext(ctx)
 
 	var txErr error
 	defer func() {

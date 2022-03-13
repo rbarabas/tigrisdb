@@ -18,6 +18,7 @@ import (
 	"context"
 
 	api "github.com/tigrisdata/tigrisdb/api/server/v1"
+	"github.com/tigrisdata/tigrisdb/cdc"
 
 	"google.golang.org/grpc/codes"
 )
@@ -50,5 +51,5 @@ func (q *queryLifecycle) run(ctx context.Context, req *Request) (*Response, erro
 		return nil, api.Errorf(codes.Internal, "query runner is missing")
 	}
 
-	return req.queryRunner.Run(ctx, req)
+	return req.queryRunner.Run(cdc.WrapContext(ctx), req)
 }
