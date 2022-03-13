@@ -21,6 +21,8 @@ import (
 	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/encoding"
 	"github.com/tigrisdata/tigrisdb/query/filter"
+	"github.com/tigrisdata/tigrisdb/query/read"
+	"github.com/tigrisdata/tigrisdb/query/update"
 	"github.com/tigrisdata/tigrisdb/server/transaction"
 	"github.com/tigrisdata/tigrisdb/store/kv"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
@@ -117,16 +119,27 @@ func (q *TxQueryRunner) iterateFilter(ctx context.Context, req *Request, tx tran
 		return err
 	}
 
-	for _, key := range iKeys {
-		switch api.RequestType(req.apiRequest) {
-		case api.Update:
-			err = tx.Update(ctx, key, req.apiRequest.(*api.UpdateRequest).Fields)
-		case api.Delete:
-			err = tx.Delete(ctx, key)
-		}
-
+	switch api.RequestType(req.apiRequest) {
+	case api.Update:
+		var factory *update.FieldOperatorFactory
+		factory, err = update.BuildFieldOperators(req.apiRequest.(*api.UpdateRequest).Fields)
 		if err != nil {
 			return err
+		}
+
+		for _, key := range iKeys {
+			// decode the fields now
+			err = tx.Update(ctx, key, func(existingDoc []byte) ([]byte, error) {
+				merged, er := factory.MergeAndGet(existingDoc)
+				if er != nil {
+					return nil, er
+				}
+				return merged, nil
+			})
+		}
+	case api.Delete:
+		for _, key := range iKeys {
+			err = tx.Delete(ctx, key)
 		}
 	}
 
@@ -190,6 +203,13 @@ func (q *StreamingQueryRunner) Run(ctx context.Context, req *Request) (*Response
 	if err != nil {
 		return nil, err
 	}
+
+	fieldFactory, err := read.BuildFields(req.apiRequest.(*api.ReadRequest).Fields)
+	if ulog.E(err) {
+		return nil, err
+	}
+
+	var totalResults int64 = 0
 	for _, key := range iKeys {
 		it, err := q.txMgr.GetKV().Read(ctx, req.collection.StorageName(), kv.BuildKey(key.PrimaryKeys()...))
 		if err != nil {
@@ -197,16 +217,28 @@ func (q *StreamingQueryRunner) Run(ctx context.Context, req *Request) (*Response
 		}
 
 		for it.More() {
+			if req.apiRequest.(*api.ReadRequest).GetOptions().GetLimit() > 0 && req.apiRequest.(*api.ReadRequest).GetOptions().GetLimit() <= totalResults {
+				return &Response{}, nil
+			}
+
 			v, err := it.Next()
 			if err != nil {
 				return nil, err
 			}
 
+			newValue, err := fieldFactory.Apply(v.Value)
+			if err != nil {
+				return nil, err
+			}
+
 			if err := q.streaming.Send(&api.ReadResponse{
-				Doc: v.Value,
+				Doc: newValue,
+				Key: v.FDBKey,
 			}); ulog.E(err) {
 				return nil, err
 			}
+
+			totalResults++
 		}
 	}
 

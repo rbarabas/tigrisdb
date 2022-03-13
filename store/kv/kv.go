@@ -20,8 +20,9 @@ import (
 )
 
 type KeyValue struct {
-	Key   Key
-	Value []byte
+	Key    Key
+	FDBKey []byte
+	Value  []byte
 }
 
 type crud interface {
@@ -31,7 +32,8 @@ type crud interface {
 	DeleteRange(ctx context.Context, table string, lKey Key, rKey Key) error
 	Read(ctx context.Context, table string, key Key) (Iterator, error)
 	ReadRange(ctx context.Context, table string, lkey Key, rkey Key) (Iterator, error)
-	UpdateRange(ctx context.Context, table string, lKey Key, rKey Key, apply func([]byte) []byte) error
+	Update(ctx context.Context, table string, key Key, apply func([]byte) ([]byte, error)) error
+	UpdateRange(ctx context.Context, table string, lKey Key, rKey Key, apply func([]byte) ([]byte, error)) error
 }
 
 type Tx interface {
