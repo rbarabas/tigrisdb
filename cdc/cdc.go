@@ -15,69 +15,53 @@
 package cdc
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"errors"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/rs/zerolog/log"
 )
 
 type ctxKey struct{}
 
 type queue struct {
-	Entries []interface{}
+	Entries []entry
 }
 
-type setEntry struct {
-	Key  fdb.Key
-	Data []byte
+type entry struct {
+	Type string
+	LKey []byte
+	RKey []byte `json:",omitempty"`
+	Data []byte `json:",omitempty"`
 }
 
-type clearEntry struct {
-	Kr fdb.KeyRange
-}
+const (
+	setType   = "set"
+	clearType = "clear"
+)
 
-func init() {
-	gob.Register(setEntry{})
-	gob.Register(clearEntry{})
-}
-
-func (q *queue) addEntry(entry interface{}) {
+func (q *queue) addEntry(entry entry) {
 	q.Entries = append(q.Entries, entry)
 }
 
 func encode(q *queue) ([]byte, error) {
-	b := bytes.Buffer{}
-	e := gob.NewEncoder(&b)
-	err := e.Encode(q)
-	if err != nil {
-		return nil, err
-	}
-	return b.Bytes(), nil
+	return jsoniter.Marshal(q)
 }
 
 func decode(data []byte) (*queue, error) {
 	q := queue{}
-	b := bytes.Buffer{}
-	b.Write(data)
-	d := gob.NewDecoder(&b)
-	err := d.Decode(&q)
-	if err != nil {
-		return nil, err
-	}
-	return &q, nil
+	return &q, jsoniter.Unmarshal(data, &q)
 }
 
 func (q *queue) dump() {
-	for _, entry := range q.Entries {
-		switch e := entry.(type) {
-		case setEntry:
-			log.Info().Bytes("key", e.Key).Bytes("data", e.Data).Msg("set")
-		case clearEntry:
-			log.Info().Bytes("lk", e.Kr.Begin.FDBKey()).Bytes("rk", e.Kr.End.FDBKey()).Msg("clear")
-		}
+	for _, e := range q.Entries {
+		log.Info().
+			Str("type", e.Type).
+			Bytes("lkey", e.LKey).
+			Bytes("rkey", e.RKey).
+			Bytes("data", e.Data).
+			Msg("entry")
 	}
 }
 
@@ -90,7 +74,7 @@ func OnSet(ctx context.Context, key fdb.Key, data []byte) error {
 	if err != nil {
 		return err
 	}
-	q.addEntry(setEntry{Key: key, Data: data})
+	q.addEntry(entry{Type: setType, LKey: key, Data: data})
 	return nil
 }
 
@@ -99,7 +83,7 @@ func OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
 	if err != nil {
 		return err
 	}
-	q.addEntry(clearEntry{Kr: kr})
+	q.addEntry(entry{Type: clearType, LKey: kr.Begin.FDBKey(), RKey: kr.End.FDBKey()})
 	return nil
 }
 
@@ -160,11 +144,11 @@ func Replay(db fdb.Database) error {
 		q.dump()
 
 		for _, entry := range q.Entries {
-			switch e := entry.(type) {
-			case setEntry:
-				tx.Set(e.Key, e.Data)
-			case clearEntry:
-				tx.ClearRange(e.Kr)
+			switch entry.Type {
+			case setType:
+				tx.Set(getFDBKey(entry.LKey), entry.Data)
+			case clearType:
+				tx.ClearRange(fdb.KeyRange{Begin: getFDBKey(entry.LKey), End: getFDBKey(entry.RKey)})
 			}
 		}
 	}
@@ -175,4 +159,8 @@ func Replay(db fdb.Database) error {
 	}
 
 	return nil
+}
+
+func getFDBKey(data []byte) fdb.Key {
+	return data
 }
