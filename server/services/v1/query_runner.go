@@ -17,6 +17,7 @@ package v1
 import (
 	"context"
 	"encoding/json"
+
 	api "github.com/tigrisdata/tigrisdb/api/server/v1"
 	"github.com/tigrisdata/tigrisdb/encoding"
 	"github.com/tigrisdata/tigrisdb/query/filter"
@@ -159,13 +160,16 @@ func (q *TxQueryRunner) iterateDocument(ctx context.Context, req *Request, tx tr
 
 		switch api.RequestType(req.apiRequest) {
 		case api.Insert:
-			err = tx.Insert(ctx, key, d)
+			opts := req.apiRequest.(*api.InsertRequest).GetOptions()
+			if opts != nil && opts.MustNotExist {
+				err = tx.Insert(ctx, key, d)
+			} else {
+				err = tx.Replace(ctx, key, d)
+			}
 			if err != nil && err.Error() == "file already exists" {
 				// FDB returning it as string, probably we need to move this check in KV
 				return api.Errorf(codes.AlreadyExists, "row already exists")
 			}
-		case api.Replace:
-			err = tx.Replace(ctx, key, d)
 		}
 
 		if err != nil {
