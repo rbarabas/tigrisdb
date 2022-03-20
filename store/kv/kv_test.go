@@ -250,7 +250,7 @@ func testKVTimeout(t *testing.T, kv KV) {
 }
 
 func TestKVFDB(t *testing.T) {
-	kv, err := NewFoundationDB(getTestFDBConfig(t))
+	kv, err := NewFoundationDB(getTestFDBConfig(t), &NoListener{})
 	require.NoError(t, err)
 
 	t.Run("TestKVFDBBasic", func(t *testing.T) {
