@@ -24,7 +24,6 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	"github.com/rs/zerolog/log"
-	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/server/config"
 	ulog "github.com/tigrisdata/tigrisdb/util/log"
 	"golang.org/x/xerrors"
@@ -37,6 +36,7 @@ const (
 // fdbkv is an implementation of kv on top of FoundationDB
 type fdbkv struct {
 	db fdb.Database
+	l  Listener
 }
 
 type fbatch struct {
@@ -62,18 +62,19 @@ type fdbIteratorTxCloser struct {
 }
 
 // NewFoundationDB initializes instance of FoundationDB KV interface implementation
-func NewFoundationDB(cfg *config.FoundationDBConfig) (KV, error) {
+func NewFoundationDB(cfg *config.FoundationDBConfig, listener Listener) (KV, error) {
 	d := fdbkv{}
-	if err := d.init(cfg); err != nil {
+	if err := d.init(cfg, listener); err != nil {
 		return nil, err
 	}
 	return &d, nil
 }
 
-func (d *fdbkv) init(cfg *config.FoundationDBConfig) (err error) {
+func (d *fdbkv) init(cfg *config.FoundationDBConfig, listener Listener) (err error) {
 	log.Err(err).Int("api_version", 630).Str("cluster_file", cfg.ClusterFile).Msg("initializing foundation db")
 	fdb.MustAPIVersion(630)
 	d.db, err = fdb.OpenDatabase(cfg.ClusterFile)
+	d.l = listener
 	log.Err(err).Msg("initialized foundation db")
 	return
 }
@@ -300,7 +301,7 @@ func (t *ftx) Insert(ctx context.Context, table string, key Key, data []byte) er
 	}
 
 	t.tx.Set(k, data)
-	err = cdc.OnSet(ctx, k, data)
+	err = t.d.l.OnSet(ctx, k, data)
 	if err != nil {
 		return err
 	}
@@ -314,7 +315,7 @@ func (t *ftx) Replace(ctx context.Context, table string, key Key, data []byte) e
 	k := getFDBKey(table, key)
 
 	t.tx.Set(k, data)
-	err := cdc.OnSet(ctx, k, data)
+	err := t.d.l.OnSet(ctx, k, data)
 	if err != nil {
 		return err
 	}
@@ -331,7 +332,7 @@ func (t *ftx) Delete(ctx context.Context, table string, key Key) error {
 	}
 
 	t.tx.ClearRange(kr)
-	err = cdc.OnClearRange(ctx, kr)
+	err = t.d.l.OnClearRange(ctx, kr)
 	if err != nil {
 		return err
 	}
@@ -372,7 +373,7 @@ func (t *ftx) Update(ctx context.Context, table string, key Key, apply func([]by
 		}
 
 		t.tx.Set(kv.Key, v)
-		err = cdc.OnSet(ctx, kv.Key, v)
+		err = t.d.l.OnSet(ctx, kv.Key, v)
 		if err != nil {
 			return err
 		}
@@ -402,7 +403,7 @@ func (t *ftx) UpdateRange(ctx context.Context, table string, lKey Key, rKey Key,
 		}
 
 		t.tx.Set(kv.Key, v)
-		err = cdc.OnSet(ctx, kv.Key, v)
+		err = t.d.l.OnSet(ctx, kv.Key, v)
 		if err != nil {
 			return err
 		}
@@ -437,7 +438,7 @@ func (t *ftx) ReadRange(_ context.Context, table string, lKey Key, rKey Key) (It
 
 func (t *ftx) Commit(ctx context.Context) error {
 	for {
-		err := cdc.OnCommit(ctx, t.tx)
+		err := t.d.l.OnCommit(ctx, t.tx)
 		if err != nil {
 			return err
 		}
@@ -466,7 +467,7 @@ func (t *ftx) Commit(ctx context.Context) error {
 }
 
 func (t *ftx) Rollback(ctx context.Context) error {
-	cdc.OnRollback(ctx)
+	t.d.l.OnCancel(ctx)
 
 	t.tx.Cancel()
 

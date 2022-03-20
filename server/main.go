@@ -17,6 +17,7 @@ package main
 import (
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/pflag"
+	"github.com/tigrisdata/tigrisdb/cdc"
 	"github.com/tigrisdata/tigrisdb/server/config"
 	"github.com/tigrisdata/tigrisdb/server/muxer"
 	"github.com/tigrisdata/tigrisdb/store/kv"
@@ -38,7 +39,10 @@ func main() {
 
 	log.Info().Str("version", Version).Str("BuildHash", BuildHash).Msgf("Starting server")
 
-	kv, err := kv.NewFoundationDB(&config.DefaultConfig.FoundationDB)
+	//listener := &kv.NoListener{}
+	listener := &cdc.Listener{}
+
+	kv, err := kv.NewFoundationDB(&config.DefaultConfig.FoundationDB, listener)
 	if err != nil {
 		log.Fatal().Err(err).Msg("error initializing kv store")
 	}

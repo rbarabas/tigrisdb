@@ -23,9 +23,14 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rs/zerolog/log"
+	"github.com/tigrisdata/tigrisdb/store/kv"
 )
 
 type ctxKey struct{}
+
+type Listener struct {
+	kv.Listener
+}
 
 type queue struct {
 	Entries []entry
@@ -71,7 +76,7 @@ func WrapContext(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxKey{}, &queue{})
 }
 
-func OnSet(ctx context.Context, key fdb.Key, data []byte) error {
+func (l *Listener) OnSet(ctx context.Context, key fdb.Key, data []byte) error {
 	q, err := getQueue(ctx)
 	if err != nil {
 		return err
@@ -80,7 +85,7 @@ func OnSet(ctx context.Context, key fdb.Key, data []byte) error {
 	return nil
 }
 
-func OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
+func (l *Listener) OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
 	q, err := getQueue(ctx)
 	if err != nil {
 		return err
@@ -89,7 +94,7 @@ func OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
 	return nil
 }
 
-func OnCommit(ctx context.Context, tx *fdb.Transaction) error {
+func (l *Listener) OnCommit(ctx context.Context, tx *fdb.Transaction) error {
 	q, err := getQueue(ctx)
 	if err != nil {
 		return err
@@ -122,7 +127,7 @@ func getCDCKey() (fdb.Key, error) {
 	return s.PackWithVersionstamp(t)
 }
 
-func OnRollback(ctx context.Context) {
+func (l *Listener) OnCancel(ctx context.Context) {
 	q, _ := getQueue(ctx)
 	if q != nil {
 		q.Entries = nil
