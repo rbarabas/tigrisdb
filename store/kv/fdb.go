@@ -437,11 +437,10 @@ func (t *ftx) ReadRange(_ context.Context, table string, lKey Key, rKey Key) (It
 
 func (t *ftx) Commit(ctx context.Context) error {
 	for {
-		data, err := cdc.OnCommit(ctx)
+		err := cdc.OnCommit(ctx, t.tx)
 		if err != nil {
 			return err
 		}
-		t.tx.Set(getFDBKey("cdc", BuildKey(time.Now().UnixNano())), data)
 
 		err = t.tx.Commit().Get()
 

@@ -19,6 +19,8 @@ import (
 	"errors"
 
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/subspace"
+	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rs/zerolog/log"
 )
@@ -87,10 +89,10 @@ func OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
 	return nil
 }
 
-func OnCommit(ctx context.Context) ([]byte, error) {
+func OnCommit(ctx context.Context, tx *fdb.Transaction) error {
 	q, err := getQueue(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	defer func() {
@@ -98,7 +100,26 @@ func OnCommit(ctx context.Context) ([]byte, error) {
 	}()
 
 	q.dump()
-	return encode(q)
+	data, err := encode(q)
+	if err != nil {
+		return err
+	}
+
+	key, err := getCDCKey()
+	if err != nil {
+		return err
+	}
+
+	tx.SetVersionstampedKey(key, data)
+
+	return nil
+}
+
+func getCDCKey() (fdb.Key, error) {
+	s := subspace.FromBytes([]byte("cdc"))
+	v := tuple.IncompleteVersionstamp(0)
+	t := []tuple.TupleElement{v}
+	return s.PackWithVersionstamp(t)
 }
 
 func OnRollback(ctx context.Context) {
