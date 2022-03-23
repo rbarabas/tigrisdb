@@ -23,14 +23,11 @@ import (
 	"github.com/apple/foundationdb/bindings/go/src/fdb/tuple"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/rs/zerolog/log"
-	"github.com/tigrisdata/tigrisdb/store/kv"
 )
 
 type ctxKey struct{}
 
-type Listener struct {
-	kv.Listener
-}
+type Listener struct{}
 
 type queue struct {
 	Entries []entry

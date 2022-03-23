@@ -27,9 +27,7 @@ type Listener interface {
 	OnCancel(ctx context.Context)
 }
 
-type NoListener struct {
-	Listener
-}
+type NoListener struct{}
 
 func (l *NoListener) OnSet(context.Context, fdb.Key, []byte) error {
 	return nil
