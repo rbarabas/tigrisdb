@@ -2,9 +2,6 @@ name: go-test
 on:
   push:
   workflow_call:
-    secrets:
-      API_DEPLOY_KEY:
-        required: true
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -16,7 +13,7 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v16
 
-      # Pulling existing images to skip caching them
+      # TODO: Fix docker caching
       - name: Pull docker images
         run: docker-compose -f test/docker/docker-compose.yml pull
 
@@ -29,6 +26,9 @@ jobs:
         run: |
           docker pull debian:bullseye-slim
           docker pull golang:1.18-bullseye
+
+      - name: Pull submodules
+        run: git submodule update --init --recursive
 
       - name: Build docker images
         if: env.need_rebuild
