@@ -30,10 +30,10 @@ type ctxKey struct{}
 type Listener struct{}
 
 type queue struct {
-	Entries []entry
+	Entries []Entry
 }
 
-type entry struct {
+type Entry struct {
 	Type string
 	LKey []byte
 	RKey []byte `json:",omitempty"`
@@ -45,7 +45,7 @@ const (
 	clearType = "clear"
 )
 
-func (q *queue) addEntry(entry entry) {
+func (q *queue) addEntry(entry Entry) {
 	q.Entries = append(q.Entries, entry)
 }
 
@@ -78,7 +78,7 @@ func (l *Listener) OnSet(ctx context.Context, key fdb.Key, data []byte) error {
 	if err != nil {
 		return err
 	}
-	q.addEntry(entry{Type: setType, LKey: key, Data: data})
+	q.addEntry(Entry{Type: setType, LKey: key, Data: data})
 	return nil
 }
 
@@ -87,7 +87,7 @@ func (l *Listener) OnClearRange(ctx context.Context, kr fdb.KeyRange) error {
 	if err != nil {
 		return err
 	}
-	q.addEntry(entry{Type: clearType, LKey: kr.Begin.FDBKey(), RKey: kr.End.FDBKey()})
+	q.addEntry(Entry{Type: clearType, LKey: kr.Begin.FDBKey(), RKey: kr.End.FDBKey()})
 	return nil
 }
 
