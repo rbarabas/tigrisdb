@@ -32,7 +32,7 @@ func TestKeyEncoding(t *testing.T) {
 	fdbCfg, err := config.GetTestFDBConfig("../../..")
 	require.NoError(t, err)
 
-	kv, err := kv.NewFoundationDB(fdbCfg)
+	kv, err := kv.NewFoundationDB(fdbCfg, &kv.NoListener{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -91,7 +91,7 @@ func TestKeyEncoding_Error(t *testing.T) {
 	fdbCfg, err := config.GetTestFDBConfig("../../..")
 	require.NoError(t, err)
 
-	kv, err := kv.NewFoundationDB(fdbCfg)
+	kv, err := kv.NewFoundationDB(fdbCfg, &kv.NoListener{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -123,7 +123,7 @@ func TestReservedNamespace(t *testing.T) {
 	fdbCfg, err := config.GetTestFDBConfig("../../..")
 	require.NoError(t, err)
 
-	kv, err := kv.NewFoundationDB(fdbCfg)
+	kv, err := kv.NewFoundationDB(fdbCfg, &kv.NoListener{})
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
